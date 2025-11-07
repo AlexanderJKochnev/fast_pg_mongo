@@ -1,0 +1,14 @@
+[flake8]
+max-line-length = 120
+max-doc-length = 120
+exclude =
+    tests
+    *_pb2_grpc.py
+    *_pb2.py
+
+ignore=C101,D107,WPS602,WPS605,DAR402,W504,S101
+
+enable-extensions = G
+dictionaries = en_US,python,technical
+import-order-style = google
+inline-quotes = "
