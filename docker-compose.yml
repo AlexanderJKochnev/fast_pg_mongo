@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
     command: uvicorn app.main:app --host ${API_HOST} --port ${API_PORT}
     depends_on:
-      wine_host:
+      db:
         condition: service_healthy
       mongo:
         condition: service_healthy
@@ -99,7 +99,7 @@ services:
     #   - "${MONGO_OUT_PORT}:${MONGO_INN_PORT}"
     volumes:
       - ./mongodb_data:/data/db
-      - ./mongo/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    #  - ./mongo/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     command: >
       mongod
       --bind_ip_all
@@ -136,7 +136,7 @@ services:
     ports:
       - "${ME_OUT_PORT}:${ME_INN_PORT}"
     depends_on:
-      wine_host:
+      db:
         condition: service_healthy
       mongo:
         condition: service_healthy

@@ -14,7 +14,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -r requirements.txt
 COPY ./app ./app
-COPY alembic.ini .
+# COPY alembic.ini .
 COPY .env .
 EXPOSE $APP_PORT
 
