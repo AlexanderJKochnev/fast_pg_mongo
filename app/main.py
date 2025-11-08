@@ -3,6 +3,9 @@ from fastapi import FastAPI, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.routers import CodeRouter, NameRouter, RawdataRouter, ImageRouter
 from app.databases.postgres import init_db, get_db
+from app.routers.mongo_file_router import mongo_file_router
+from app.routers.cascade_file_router import cascade_file_router
+
 
 app = FastAPI()
 
@@ -17,6 +20,8 @@ app.include_router(code_router.router)
 app.include_router(name_router.router)
 app.include_router(rawdata_router.router)
 app.include_router(image_router.router)
+app.include_router(mongo_file_router)
+app.include_router(cascade_file_router)
 
 
 @app.on_event("startup")

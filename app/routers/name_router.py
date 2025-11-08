@@ -1,4 +1,8 @@
 # app/routers/name_router.py
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.databases.postgres import get_db
 from app.routers.base import BaseRouter
 from app.models.postgres import Name
 from app.services.postgres import NameService
@@ -20,3 +24,11 @@ class NameRouter(BaseRouter):
             delete_schema=NameDelete,
             pagination_schema=NamePaginationRead
         )
+
+    async def create(self, data: NameCreate, db: AsyncSession = Depends(get_db)):
+        """Создание записи"""
+        return await self.service.get_or_create(data, db, self.model)
+
+    async def patch(self, id: int, data: NamePatch, db: AsyncSession = Depends(get_db)):
+        """Обновление записи"""
+        return await self.service.patch(id, data, db, self.model)

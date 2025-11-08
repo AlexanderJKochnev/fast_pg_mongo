@@ -1,4 +1,8 @@
 # app/routers/image_router.py
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.databases.postgres import get_db
 from app.routers.base import BaseRouter
 from app.models.postgres import Image
 from app.services.postgres import ImageService
@@ -20,3 +24,11 @@ class ImageRouter(BaseRouter):
             delete_schema=ImageDelete,
             pagination_schema=ImagePaginationRead
         )
+
+    async def create(self, data: ImageCreate, db: AsyncSession = Depends(get_db)):
+        """Создание записи"""
+        return await self.service.get_or_create(data, db, self.model)
+
+    async def patch(self, id: int, data: ImagePatch, db: AsyncSession = Depends(get_db)):
+        """Обновление записи"""
+        return await self.service.patch(id, data, db, self.model)

@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     MONGO_INITDB_ROOT_PASSWORD: str
     MONGO_INITDB_DATABASE: str
     MONGO_DATABASE: str
+    MONGO_IMAGES: str
+    MONGO_DOCUMENTS: str
     MONGO_OUT_PORT: int = 27017
     MONGO_INN_PORT: int = 27017
     MONGO_HOSTNAME: str
@@ -76,6 +78,16 @@ class Settings(BaseSettings):
             f"{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:"
             f"{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
+
+    @property
+    def mongo_url(self) -> str:
+        return (f"mongodb://{self.MONGO_INITDB_ROOT_USERNAME}:"
+                f"{self.MONGO_INITDB_ROOT_PASSWORD}@{self.MONGO_HOSTNAME}:"
+                f"{self.MONGO_INN_PORT}")  # {self.MONGO_INITDB_DATABASE}")
+
+    @property
+    def API_BASE_URL(self) -> str:
+        return f"{self.BASE_URL}:{self.PORT}"
 
 
 settings = Settings()

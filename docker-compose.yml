@@ -55,7 +55,7 @@ services:
   app:
     container_name: app
     build: .
-    restart: unless-stopped
+    # restart: unless-stopped
     command: uvicorn app.main:app --host ${API_HOST} --port ${API_PORT}
     depends_on:
       db:

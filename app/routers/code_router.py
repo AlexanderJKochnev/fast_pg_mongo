@@ -1,10 +1,12 @@
 # app/routers/code_router.py
-from app.routers.base import BaseRouter
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.databases.postgres import get_db
 from app.models.postgres import Code
+from app.routers.base import BaseRouter
+from app.schemas.postgres import (CodeCreate, CodeDelete, CodePaginationRead, CodePatch, CodeRead)
 from app.services.postgres import CodeService
-from app.schemas.postgres import (
-    CodeCreate, CodeRead, CodePatch, CodeDelete, CodePaginationRead
-)
 
 
 class CodeRouter(BaseRouter):
@@ -20,3 +22,11 @@ class CodeRouter(BaseRouter):
             delete_schema=CodeDelete,
             pagination_schema=CodePaginationRead
         )
+
+    async def create(self, data: CodeCreate, db: AsyncSession = Depends(get_db)):
+        """Создание записи"""
+        return await self.service.get_or_create(data, db, self.model)
+
+    async def patch(self, id: int, data: CodePatch, db: AsyncSession = Depends(get_db)):
+        """Обновление записи"""
+        return await self.service.patch(id, data, db, self.model)

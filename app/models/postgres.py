@@ -1,47 +1,55 @@
 # app/models/postgres.py
-"""
-это пример
-"""
-
 from app.models.base import Base, Base_at, str_uniq, str_null_index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Column, String, Text, ForeignKey
+from sqlalchemy import String, Text, ForeignKey
+from typing import List, Optional
 
 
 class Code(Base, Base_at):
-    code = Mapped[str_uniq]
-    url = Mapped[str_uniq]
-    status = Column(String, default='pending')  # pending, done, error
-
-    names = relationship("Name", back_populates="codes")
+    __tablename__ = "codes"
+    
+    code: Mapped[str] = mapped_column(String(255), unique = True, nullable = False, index = True)
+    url: Mapped[str] = mapped_column(String(255), unique = True, nullable = False, index = True)
+    status: Mapped[str] = mapped_column(String(50), default = 'pending')  # pending, done, error
+    
+    # Один Code ко многим Name
+    names: Mapped[List["Name"]] = relationship("Name", back_populates = "code", cascade = "all, delete-orphan")
 
 
 class Name(Base, Base_at):
-    code_id: Mapped[int] = mapped_column(ForeignKey("codes.id"), nullable=False)
-    # ниже устаревший код - результат тот же
-    # code_id = Column(String, ForeignKey('codes.id'))
-    name = Mapped[str_uniq]
-    url = Mapped[str_uniq]
-    status = Column(String, default='pending')
-
-    code: Mapped[Code] = relationship(back_populates="names")
-    # code_obj = relationship("Code", back_populates="names")
-    rawdata: Mapped["Rawdata"] = relationship(back_populates="names")
-    # rawdata = relationship("Rawdata", back_populates="name_obj")
-    images: Mapped['Image'] = relationship(back_populates="names")
-    # images = relationship("Image", back_populates="names")
+    __tablename__ = "names"
+    
+    code_id: Mapped[int] = mapped_column(ForeignKey("codes.id"), nullable = False)
+    name: Mapped[str] = mapped_column(String(255), unique = True, nullable = False, index = True)
+    url: Mapped[str] = mapped_column(String(255), unique = True, nullable = False, index = True)
+    status: Mapped[str] = mapped_column(String(50), default = 'pending')
+    
+    # Многие Name к одному Code
+    code: Mapped["Code"] = relationship("Code", back_populates = "names")
+    
+    # Один Name к одному Rawdata
+    rawdata: Mapped[Optional["Rawdata"]] = relationship("Rawdata", back_populates = "name", uselist = False)
+    
+    # Один Name ко многим Image
+    images: Mapped[List["Image"]] = relationship("Image", back_populates = "name", cascade = "all, delete-orphan")
 
 
 class Rawdata(Base, Base_at):
-    name_id: Mapped[int] = mapped_column(ForeignKey("names.id"), nullable=False)
-    # name_id = Column(String, ForeignKey('names.id'))
-    body_html = Column(Text)
-    names: Mapped[Name] = relationship(back_populates="rawdata")
+    __tablename__ = "rawdata"
+    
+    name_id: Mapped[int] = mapped_column(ForeignKey("names.id"), nullable = False, unique = True)
+    body_html: Mapped[Optional[str]] = mapped_column(Text)
+    
+    # Один Rawdata к одному Name
+    name: Mapped["Name"] = relationship("Name", back_populates = "rawdata")
 
 
 class Image(Base, Base_at):
-    name_id: Mapped[int] = mapped_column(ForeignKey("names.id"), nullable=False)
-    file_id = Mapped[str_null_index]  # ID файла в MongoDB
-    file_url = Mapped[str_null_index]  # оригинальная ссылка
-    names: Mapped[Name] = relationship(back_populates="images")
-    # name_obj = relationship("Name", back_populates="images")
+    __tablename__ = "images"
+    
+    name_id: Mapped[int] = mapped_column(ForeignKey("names.id"), nullable = False)
+    file_id: Mapped[Optional[str]] = mapped_column(String(255), nullable = True, index = True)  # ID файла в MongoDB
+    file_url: Mapped[Optional[str]] = mapped_column(String(255), nullable = True, index = True)  # оригинальная ссылка
+    
+    # Многие Image к одному Name
+    name: Mapped["Name"] = relationship("Name", back_populates = "images")

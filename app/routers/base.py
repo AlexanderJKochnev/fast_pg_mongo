@@ -1,17 +1,14 @@
 # app/routers/base.py
-# app/routers/base.py
+from fastapi import APIRouter, Depends, status, Query
 from datetime import datetime
-from typing import List, Optional
-
-from fastapi import APIRouter, Depends, Query
+from typing import Any, Dict, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.databases.postgres import get_db
 
 
 class BaseRouter:
     """Базовый класс роутера"""
-
+    
     def __init__(
             self, prefix: str, tags: List[str], service, model, create_schema, read_schema, patch_schema, delete_schema,
             pagination_schema, read_schema_relation=None
@@ -72,15 +69,19 @@ class BaseRouter:
             after_date: Optional[datetime] = None, db: AsyncSession = Depends(get_db)
             ):
         """Получение всех записей с пагинацией"""
-        return await self.service.get_all(after_date, page, page_size, db, self.model)
+        # Используем текущую дату если after_date не указан
+        if after_date is None:
+            after_date = datetime.utcfromtimestamp(0)  # Начало эпохи Unix
+        
+        return await self.service.get_all(after_date, page, page_size, self.model, db)
     
     async def get_by_id(self, id: int, db: AsyncSession = Depends(get_db)):
         """Получение записи по ID"""
-        return await self.service.get_by_id(id, db, self.model)
+        return await self.service.get_by_id(id, self.model, db)
     
     async def patch(self, id: int, data, db: AsyncSession = Depends(get_db)):
         """Обновление записи"""
-        return await self.service.patch(id, data, db, self.model)
+        return await self.service.patch(id, data, self.model, db)
     
     async def delete(self, id: int, db: AsyncSession = Depends(get_db)):
         """Удаление записи"""
@@ -91,12 +92,14 @@ class BaseRouter:
             db: AsyncSession = Depends(get_db)
             ):
         """Поиск с пагинацией"""
-        # Базовая реализация - можно переопределить в дочерних классах
-        return await self.service.get_all(None, page, page_size, db, self.model)
-
+        # Базовая реализация - возвращаем все записи
+        after_date = datetime.utcfromtimestamp(0)
+        return await self.service.get_all(after_date, page, page_size, self.model, db)
+    
     async def search_all(
             self, query: str = Query(...), db: AsyncSession = Depends(get_db)
             ):
         """Поиск без пагинации"""
-        # Базовая реализация - можно переопределить в дочерних классах
-        return await self.service.get(None, db, self.model)
+        # Базовая реализация - возвращаем все записи
+        after_date = datetime.utcfromtimestamp(0)
+        return await self.service.get(after_date, self.model, db)

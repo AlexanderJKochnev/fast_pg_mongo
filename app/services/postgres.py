@@ -1,9 +1,6 @@
 # app/services/postgres.py
-"""
-    сервисы создаются для каждой модели <Имя модеоли>Service
-    при необходимости методы могут быть перегружены
-"""
 from app.services.base import Service
+from app.models.postgres import Image, Name
 
 
 class CodeService(Service):
@@ -19,4 +16,8 @@ class RawService(Service):
 
 
 class ImageService(Service):
-    pass
+    
+    @classmethod
+    async def create_image(cls, image_data: dict, session, model=Image):
+        """Создание записи об изображении"""
+        return await cls.get_or_create(image_data, session, model)

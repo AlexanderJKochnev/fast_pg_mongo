@@ -1,127 +1,24 @@
-# app/modes/base.py
-"""
-    sqlalchemy base models
-"""
-
+# app/models/base.py
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import DateTime, String, func
 from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Annotated
-from sqlalchemy import DateTime, DECIMAL, func, Integer, text, Text
-from sqlalchemy.ext.asyncio import AsyncAttrs
-from sqlalchemy.orm import DeclarativeBase, declared_attr, Mapped, mapped_column
-from app.utils import plural
 
 
-# primary key
-int_pk = Annotated[int, mapped_column(Integer, primary_key=True, autoincrement=True)]
-
-# datetime field with default value now()
-created_at = Annotated[datetime, mapped_column(DateTime(timezone=True), server_default=func.now())]
-
-# datetime field with default and update value now()
-updated_at = Annotated[datetime, mapped_column(DateTime(timezone=True),
-                                               server_default=func.now(),
-                                               onupdate=datetime.now(timezone.utc),
-                                               index=True)]
-
-# unique non-null string field
-str_uniq = Annotated[str, mapped_column(unique=True,
-                                        nullable=False, index=True)]
-
-# non-unique nullable non-indexed string field
-str_null_true = Annotated[str, mapped_column(nullable=True)]
-# non-unique nullable indexed string field
-str_null_index = Annotated[str, mapped_column(nullable=True, index=True)]
-# non-unique, non-nullable indexed string field
-str_null_false = Annotated[str, mapped_column(nullable=False, index=True)]
-
-# integer field with default value 0
-nmbr = Annotated[int, mapped_column(server_default=text('0'))]
-
-# nullable text field
-descr = Annotated[str, mapped_column(Text, nullable=True)]
-
-# money 100000000.00
-money = Annotated[Decimal, mapped_column(DECIMAL(10, 2), nullable=True)]
-
-# volume, 100.00
-volume = Annotated[Decimal, mapped_column(DECIMAL(5, 2), nullable=True)]
-
-# alc sugar percentage 1.00
-percent = Annotated[Decimal, mapped_column(
-    DECIMAL(3, 2),
-    nullable=True
-)]
-
-# int or none
-ion = Annotated[int, mapped_column(nullable=True)]
-
-# boolean triple
-boolnone = Annotated[bool | None, mapped_column(nullable=True)]
-
-
-class Base(AsyncAttrs, DeclarativeBase):
-    """ clear model with id only,
-        common methods and properties, table name
-    """
-    __abstract__ = True
-
-    id: Mapped[int_pk]
-
-    @declared_attr.directive
-    def __tablename__(cls) -> str:
-        """ имя таблицы в бд - имя модели во множ числе по правилам англ языка"""
-        name = cls.__name__.lower()
-        return plural(name)
-        """
-        if name.endswith('model'):
-            name = name[0:-5]
-        if not name.endswith('s'):
-            if name.endswith('y'):
-                name = f'{name[0:-1]}ies'
-            else:
-                name = f'{name}s'
-        return name
-        """
-
-    def __str__(self):
-        # переоопределять в особенных формах
-        # or "" на всякий случай если обязательное поле вдруг окажется необязательным и пустым
-        return self.name or ""
-
-    def __repr__(self):
-        # return f"<Category(name={self.name})>"
-        return str(self)
-
-    def to_dict(self, seen=None) -> dict:
-        """
-        преобразует sqlalchemy instance в словарь
-        foreign filed with lazy load преобразует во вложенные словари любой губины
-        """
-        if seen is None:
-            seen = set()
-        if self is None:
-            return None
-
-        obj_id = f"{self.__class__.__name__}_{id(self)}"
-        if obj_id in seen:
-            return None  # защита от циклов
-        seen.add(obj_id)
-
-        result = {}
-        for key in self.__dict__.keys():
-            if key.startswith("_"):
-                continue
-            value = getattr(self, key)
-            if isinstance(value, list):
-                result[key] = [item.to_dict(seen) for item in value]
-            elif hasattr(value, "__table__"):  # ORM-объект
-                result[key] = value.to_dict(seen)
-            else:
-                result[key] = value
-        return result
+class Base(DeclarativeBase):
+    pass
 
 
 class Base_at:
-    created_at: Mapped[created_at]
-    updated_at: Mapped[updated_at]
+    """Базовый класс с общими полями"""
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                 server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                 server_default=func.now(),
+                                                 onupdate=datetime.now(timezone.utc),
+                                                 index=True)
+
+
+# Типы для полей (теперь это просто аннотации типов)
+str_uniq = String(255)
+str_null_index = String(255)
