@@ -3,6 +3,7 @@ from app.services.base import Service
 from app.repositories.postgres import ImageRepository
 from app.models.postgres import Image
 from typing import Dict, Any, List
+from app.schemas.postgres import ImageCreate
 
 
 class ImageService(Service):
@@ -10,7 +11,7 @@ class ImageService(Service):
     repository = ImageRepository
 
     @classmethod
-    async def create_image(cls, image_data: Dict[str, Any], db, model=Image):
+    async def create_image(cls, image_data: ImageCreate, db, model=Image):
         """Создание записи об изображении"""
         return await cls.get_or_create(image_data, db, model)
     

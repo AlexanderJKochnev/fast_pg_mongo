@@ -26,13 +26,12 @@ class MongoFileRouter:
     def setup_routes(self):
         """Настройка маршрутов"""
         self.router.add_api_route("", self.upload_file, methods = ["POST"], response_model = dict)
-        self.router.add_api_route("/health", self.health_check, methods = ["GET"])
+        self.router.add_api_route("/search", self.search_files, methods = ["GET"], response_model = dict)
         self.router.add_api_route("/{file_id}", self.get_file, methods = ["GET"], response_model = dict)
         self.router.add_api_route("/{file_id}/content", self.get_file_content, methods = ["GET"])
         self.router.add_api_route("/{file_id}", self.update_file_upload, methods = ["PATCH"])
         self.router.add_api_route("/{file_id}", self.delete_file, methods = ["DELETE"])
         self.router.add_api_route("", self.get_all_files, methods = ["GET"], response_model = dict)
-        self.router.add_api_route("/search", self.search_files, methods = ["GET"], response_model = dict)
         self.router.add_api_route("/{file_id}/link-to-postgres", self.link_to_postgres, methods = ["POST"])
         
     
@@ -42,17 +41,13 @@ class MongoFileRouter:
         prefix = settings.MONGO_DOCUMENTS
         encoded_file_id = urllib.parse.quote(file_id)
         return f"{base_url}/{prefix}/{encoded_file_id}/content"
-    
-    async def get_repository(self, database = Depends(get_database)):
-        return MongoFileRepository(database)
-    
+        
     async def upload_file(
-            self, file: UploadFile = File(...), repository: MongoFileRepository = Depends(get_repository)
-            ):
+            self, file: UploadFile = File(...), database = Depends(get_database)):
         """Загрузка файла через UploadFile"""
         try:
             content = await file.read()
-            
+            repository = MongoFileRepository(database)
             file_data = MongoFileCreate(
                     filename = file.filename, content = content,
                     content_type = file.content_type or "application/octet-stream"
@@ -65,22 +60,25 @@ class MongoFileRouter:
                     "message": "File uploaded successfully"}
         except Exception as e:
             raise HTTPException(status_code = 500, detail = f"Upload failed: {str(e)}")
-    
+
+
     async def get_file(
-            self, file_id: str, repository: MongoFileRepository = Depends(get_repository)
+            self, file_id: str, database=Depends(get_database)
             ):
         """Получение файла (без содержимого)"""
+        repository = MongoFileRepository(database)
         file_data = await MongoFileService.get_file(file_id, repository)
         if not file_data:
             raise HTTPException(status_code = 404, detail = "File not found")
         
         file_data["file_url"] = self._generate_file_url(file_id)
         return file_data
-    
+
     async def get_file_content(
-            self, file_id: str, repository: MongoFileRepository = Depends(get_repository)
+            self, file_id: str, database=Depends(get_database)
             ):
         """Получение содержимого файла"""
+        repository = MongoFileRepository(database)
         content = await MongoFileService.get_file_content(file_id, repository)
         if not content:
             raise HTTPException(status_code = 404, detail = "File not found")
@@ -90,11 +88,13 @@ class MongoFileRouter:
         
         return Response(content = content, media_type = media_type)
     
+    
     async def update_file_upload(
             self, file_id: str, file: UploadFile = File(None), filename: Optional[str] = Form(None),
-            repository: MongoFileRepository = Depends(get_repository)
+            database=Depends(get_database)
             ):
         """Обновление файла через UploadFile"""
+        repository = MongoFileRepository(database)
         update_data = {}
         
         if file:
@@ -117,11 +117,13 @@ class MongoFileRouter:
             raise HTTPException(status_code = 404, detail = "File not found or update failed")
         return {"message": "File updated successfully"}
     
+    
     async def delete_file(
-            self, file_id: str, repository: MongoFileRepository = Depends(get_repository),
-            db: AsyncSession = Depends(get_db)
+            self, file_id: str, database=Depends(get_database), db: AsyncSession = Depends(get_db)
             ):
         """Удаление файла с проверкой связей в PostgreSQL"""
+        repository = MongoFileRepository(database)
+        
         # Используем ваш существующий метод
         images_with_file = await ImageService.get_by_field("file_id", file_id, db, Image)
         if images_with_file:
@@ -134,11 +136,12 @@ class MongoFileRouter:
             raise HTTPException(status_code = 404, detail = "File not found")
         return {"message": "File deleted successfully"}
     
+    
     async def get_all_files(
-            self, page: int = Query(1, ge = 1), page_size: int = Query(10, ge = 1, le = 100),
-            repository: MongoFileRepository = Depends(get_repository)
+            self, page: int = Query(1, ge = 1), page_size: int = Query(10, ge = 1, le = 100), database=Depends(get_database)
             ):
         """Получение всех файлов с пагинацией"""
+        repository = MongoFileRepository(database)
         result = await MongoFileService.get_all_files(page, page_size, repository)
         
         for item in result["items"]:
@@ -146,11 +149,14 @@ class MongoFileRouter:
         
         return result
     
+    
     async def search_files(
-            self, filename: str = Query(...), page: int = Query(1, ge = 1),
-            page_size: int = Query(10, ge = 1, le = 100), repository: MongoFileRepository = Depends(get_repository)
+            self, filename: str = Query(...), page: int = Query(1, ge = 1), page_size: int = Query(10, ge = 1, le = 100),
+            database=Depends(get_database)
             ):
         """Поиск файлов по имени с пагинацией"""
+        repository = MongoFileRepository(database)
+        
         result = await MongoFileService.search_files(filename, page, page_size, repository)
         
         for item in result["items"]:
@@ -158,11 +164,13 @@ class MongoFileRouter:
         
         return result
     
+    
     async def link_to_postgres(
-            self, file_id: str, name_id: int, file_url: Optional[str] = None,
-            repository: MongoFileRepository = Depends(get_repository), db: AsyncSession = Depends(get_db)
+            self, file_id: str, name_id: int, file_url: Optional[str] = None, database=Depends(get_database),
+            db: AsyncSession = Depends(get_db)
             ):
         """Создание связи между MongoDB файлом и PostgreSQL записью"""
+        repository = MongoFileRepository(database)
         file_data = await MongoFileService.get_file(file_id, repository)
         if not file_data:
             raise HTTPException(status_code = 404, detail = "File not found in MongoDB")
@@ -177,19 +185,5 @@ class MongoFileRouter:
         
         return {"message": "File linked to PostgreSQL successfully", "postgres_id": result.id, "mongo_file_id": file_id,
                 "file_url": file_url}
-    
-    async def health_check(self, mongodb_instance: MongoDB = Depends(get_mongodb)):
-        status_info = {"status": "healthy", "mongo_connected": mongodb_instance.client is not None,
-                       "mongo_operational": False}
-        
-        if mongodb_instance.client:
-            try:
-                await mongodb_instance.client.admin.command('ping')
-                status_info["mongo_operational"] = True
-            except Exception as e:
-                status_info["status"] = f"{str(e)}"
-        
-        return status_info
-
 
 mongo_file_router = MongoFileRouter().router

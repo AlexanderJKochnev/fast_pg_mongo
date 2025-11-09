@@ -12,8 +12,9 @@ class MongoFileRepository:
 
     async def create(self, file_data: MongoFileCreate) -> str:
         """Создание файла в MongoDB"""
-        document = {"filename": file_data.filename, "size": len(file_data.content), "content": file_data.content,
-                "content_type": file_data.content_type, "created_at": datetime.utcnow()}
+        document = {"filename": file_data.filename, "size": len(file_data.content),
+                    "content": file_data.content, "content_type": file_data.content_type,
+                    "created_at": datetime.utcnow()}
         
         result = await self.collection.insert_one(document)
         return str(result.inserted_id)
@@ -85,21 +86,25 @@ class MongoFileRepository:
     async def count(self) -> int:
         """Подсчет общего количества файлов"""
         return await self.collection.count_documents({})
-    
+
     async def search_by_filename(self, filename: str, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         """Поиск файлов по имени"""
+        print(f"Searching for filename: {filename}")  # Отладка
         cursor = self.collection.find(
-                {"filename": {"$regex": filename, "$options": "i"}}, {"content": 0}
-                ).skip(skip).limit(limit)
-        
+            {"filename": {"$regex": filename, "$options": "i"}}
+            # {"filename": filename}
+        ).skip(skip).limit(limit)
+
         files = []
         async for document in cursor:
-            files.append(
-                    {"file_id": str(document["_id"]), "filename": document["filename"], "size": document["size"],
-                            "content_type": document["content_type"], "created_at": document["created_at"]}
-                    )
+            print(f"Found document: {document}")  # Отладка
+            # Создаем копию документа без _id и content
+            file_data = {k: v for k, v in document.items() if k not in ['_id', 'content']}
+            file_data["file_id"] = str(document["_id"])
+            files.append(file_data)
+        print(f"Total files found: {len(files)}")
         return files
-    
+
     async def get_file_content(self, file_id: str) -> Optional[bytes]:
         """Получение только содержимого файла"""
         try:

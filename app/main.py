@@ -1,5 +1,6 @@
 # app/main.py
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.routers import CodeRouter, NameRouter, RawdataRouter, ImageRouter
 from app.databases.postgres import init_db, get_db, engine
@@ -9,6 +10,15 @@ from app.routers.cascade_file_router import cascade_file_router
 
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    # allow_origins=["http://localhost:5173"],  # адрес Vite-дев-сервера, что еще?
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # Инициализация роутеров
 code_router = CodeRouter()

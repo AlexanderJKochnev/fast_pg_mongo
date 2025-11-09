@@ -2,8 +2,10 @@
 # flake8:  NOQA: W291 E402 W292 W293
 
 import asyncio
+from pathlib import Path
 import pytest
 from httpx import AsyncClient, ASGITransport
+from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 import os
 import sys
@@ -12,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.main import app
 from app.databases.postgres import Base, get_db
-from app.databases.mongo import mongodb, get_database, MongoDB
+from app.databases.mongo import mongodb, get_database, MongoDB, get_mongodb
 
 # Тестовые настройки
 TEST_DATABASE_URL = "postgresql+psycopg_async://test_user:test@localhost:2345/test_db"
@@ -23,6 +25,20 @@ TEST_MONGO_DB = "test_db"
 # Глобальные переменные для тестовых ресурсов
 test_engine = None
 TestingSessionLocal = None
+
+@pytest.fixture(scope="session")
+def test_database_url():
+    return TEST_DATABASE_URL
+
+
+@pytest.fixture(scope="session")
+def test_mongo_url():
+    return TEST_MONGO_URL
+
+
+@pytest.fixture(scope="session")
+def test_mongo_db():
+    return TEST_MONGO_DB
 
 
 @pytest.fixture(scope = "session")
@@ -81,6 +97,27 @@ async def override_get_db():
             await session.close()
 
 
+@pytest.fixture(scope="session")
+async def test_mongodb(clean_database, test_mongo_url, test_mongo_db):
+    """ Создает тестовый экземпляр MongoDB
+    """
+    test_mongo = MongoDB()
+    await test_mongo.connect(test_mongo_url, test_mongo_db)
+    yield test_mongo
+    await test_mongo.disconnect()
+
+
+@pytest.fixture(scope="session")  # , autouse=True)
+async def clean_database(test_mongo_url, test_mongo_db):
+    """Очищает базу данных перед каждой сессией"""
+    test_mongo = MongoDB()
+    await test_mongo.connect(test_mongo_url, test_mongo_db)
+    if hasattr(test_mongo, test_mongo_db):
+        await test_mongo.client.drop_database(test_mongo_db)
+        test_mongo.database = test_mongo.client[test_mongo_db]
+    await test_mongo.disconnect()
+
+
 async def override_get_database():
     """Переопределенная зависимость MongoDB для тестов"""
     if not mongodb.client:
@@ -88,13 +125,20 @@ async def override_get_database():
     return mongodb.database
 
 
-@pytest.fixture
-async def async_client():
+@pytest.fixture(scope="session")
+async def async_client(test_mongodb):
     """Асинхронный тестовый клиент"""
     # Переопределяем зависимости
     
+    async def override_get_mongodb():
+        return test_mongodb
+
+    async def override_get_database():
+        return test_mongodb.database
+    
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_database] = override_get_database
+    
     
     async with AsyncClient(
             transport = ASGITransport(app = app), base_url = "http://test"
@@ -116,3 +160,22 @@ async def test_db_session():
             raise
         finally:
             await session.close()
+
+
+@pytest.fixture
+def test_images_dir():
+    """Возвращает путь к директории с тестовыми изображениями"""
+    return Path(__file__).parent / "test_images"
+
+
+@pytest.fixture
+def sample_image_paths(test_images_dir):
+    """Возвращает пути ко всем тестовым изображениям"""
+    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.pdf'}
+    image_paths = []
+
+    for file_path in test_images_dir.iterdir():
+        if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+            image_paths.append(file_path)
+
+    return image_paths
