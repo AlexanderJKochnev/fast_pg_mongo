@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     def database_url(self) -> Optional[PostgresDsn]:
         """
              возвращает строку подключения postgresql
+             postgresql+asyncpg заменить на postgresql+psycopg_async
+             добавить в requirements.txt psycopg[binary]>=3.1.0
         """
         return (
             f"postgresql+asyncpg://{self.POSTGRES_USER}:"

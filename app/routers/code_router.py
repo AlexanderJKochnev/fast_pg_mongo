@@ -25,8 +25,9 @@ class CodeRouter(BaseRouter):
 
     async def create(self, data: CodeCreate, db: AsyncSession = Depends(get_db)):
         """Создание записи"""
-        return await self.service.get_or_create(data, db, self.model)
+        # return await self.service.get_or_create(data, db, self.model)
+        return await super().create(data, db)
 
     async def patch(self, id: int, data: CodePatch, db: AsyncSession = Depends(get_db)):
         """Обновление записи"""
-        return await self.service.patch(id, data, db, self.model)
+        return await super().patch(id, data, db)

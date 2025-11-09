@@ -2,7 +2,8 @@
 from fastapi import FastAPI, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.routers import CodeRouter, NameRouter, RawdataRouter, ImageRouter
-from app.databases.postgres import init_db, get_db
+from app.databases.postgres import init_db, get_db, engine
+from app.databases.mongo import get_mongodb
 from app.routers.mongo_file_router import mongo_file_router
 from app.routers.cascade_file_router import cascade_file_router
 
@@ -30,16 +31,18 @@ async def startup_event():
     print("🚀 Запуск приложения...")
     await init_db()
 
+
 @app.get("/")
 async def root():
     return {"message": "API работает"}
+
 
 @app.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """Проверка здоровья с подключением к БД"""
     try:
         # Простой запрос для проверки подключения
-        result = await db.execute("SELECT 1")
+        _ = await db.execute("SELECT 1")
         return {
             "status": "healthy",
             "database": "connected"
@@ -50,3 +53,10 @@ async def health_check(db: AsyncSession = Depends(get_db)):
             "database": "disconnected",
             "error": str(e)
         }
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    mongodb_instance = await get_mongodb()
+    await mongodb_instance.disconnect()
+    await engine.dispose()

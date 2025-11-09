@@ -1,17 +1,18 @@
 # app/services/base.py
 from abc import ABCMeta
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.repositories.base import ModelType, Repository
 from app.service_registry import register_service
-from app.repositories.base import Repository, ModelType
 from app.utils import parse_unique_violation2
 
 
 class ServiceMeta(ABCMeta):
     """ нужен для регистрации services"""
-    
+
     def __new__(cls, name, bases, attrs):
         new_class = super().__new__(cls, name, bases, attrs)
         if not attrs.get('__abstract__', False):
@@ -20,44 +21,44 @@ class ServiceMeta(ABCMeta):
         return new_class
 
 
-class Service(metaclass = ServiceMeta):
+class Service(metaclass=ServiceMeta):
     """
     Base Service Layer
     """
     __abstract__ = True
     repository = Repository
-    
+
     @classmethod
     async def get_or_create(
-            cls, data: Any, session: AsyncSession, model: ModelType
-            ) -> ModelType:
+        cls, data: Any, session: AsyncSession, model: ModelType
+    ) -> ModelType:
         """ проверяет существование, при необходимости добавляет. возвращает результат """
         try:
-            data_dict = data.model_dump(exclude_unset = True)
-            
+            data_dict = data.model_dump(exclude_unset=True)
+
             # Исключаем поля отношений из поиска
             search_data = {}
             for key, value in data_dict.items():
                 if not key.endswith('s'):  # Исключаем отношения (обычно заканчиваются на 's')
                     search_data[key] = value
-            
+
             # поиск существующей записи
             instance = await cls.repository.get_by_fields(search_data, model, session)
             if instance:
                 return instance
-            
+
             # запись не найдена - создаем новую
             obj = model(**data_dict)
             instance = await cls.repository.create(obj, session)
             await session.flush()
             await session.refresh(instance)
-            
+
             if not instance.id:
                 await session.commit()
                 await session.refresh(instance)
-            
+
             return instance
-        
+
         except IntegrityError as e:
             error_msg = str(e)
             await session.rollback()
@@ -69,11 +70,11 @@ class Service(metaclass = ServiceMeta):
                 else:
                     raise Exception(f"Integrity error but cannot find existing record: {error_msg}")
             raise Exception(f"Integrity error: {error_msg}")
-        
+
         except Exception as e:
             await session.rollback()
             raise Exception(f"Service error: {str(e)}")
-    
+
     @classmethod
     async def update_or_create(
             cls, lookup: Dict[str, Any], defaults: Dict[str, Any], model: ModelType, session: AsyncSession
@@ -89,45 +90,45 @@ class Service(metaclass = ServiceMeta):
     
     @classmethod
     async def get_all(
-            cls, after_date: datetime, page: int, page_size: int, model: ModelType, session: AsyncSession
+            cls, page: int, page_size: int, model: ModelType, session: AsyncSession
             ) -> Dict[str, Any]:
         """Получение всех записей с пагинацией"""
         skip = (page - 1) * page_size
-        items, total = await cls.repository.get_all(after_date, skip, page_size, model, session)
+        items, total = await cls.repository.get_all(skip, page_size, model, session)
         return {"items": items, "total": total, "page": page, "page_size": page_size,
                 "has_next": skip + len(items) < total, "has_prev": page > 1}
     
     @classmethod
     async def get(
-            cls, after_date: datetime, model: ModelType, session: AsyncSession
+            cls, model: ModelType, session: AsyncSession
             ) -> List[ModelType]:
         """Получение всех записей без пагинации"""
-        return await cls.repository.get(after_date, model, session)
-    
+        return await cls.repository.get(model, session)
+
     @classmethod
     async def get_by_id(
             cls, id: int, model: ModelType, session: AsyncSession
             ) -> Optional[ModelType]:
         """Получение записи по ID"""
         return await cls.repository.get_by_id(id, model, session)
-    
+
     @classmethod
     async def patch(
-            cls, id: int, data: Any, model: ModelType, session: AsyncSession
-            ) -> dict:
+        cls, id: int, data: Any, model: ModelType, session: AsyncSession
+    ) -> dict:
         """
         Редактирование записи по ID
         """
         existing_item = await cls.repository.get_by_id(id, model, session)
         if not existing_item:
             return {'success': False, 'message': f'Редактируемая запись {id} не найдена', 'error_type': 'not_found'}
-        
-        data_dict = data.model_dump(exclude_unset = True)
+
+        data_dict = data.model_dump(exclude_unset=True)
         if not data_dict:
             return {'success': False, 'message': 'Нет данных для обновления', 'error_type': 'no_data'}
-        
+
         result = await cls.repository.patch(existing_item, data_dict, session)
-        
+
         if result == "unique_constraint_violation":
             return {'success': False, 'message': 'Нарушение уникальности', 'error_type': 'unique_constraint_violation'}
         elif result == "foreign_key_violation":
@@ -140,7 +141,7 @@ class Service(metaclass = ServiceMeta):
             return {'success': True, 'data': result, 'message': f'Запись {id} успешно обновлена'}
         else:
             return {'success': False, 'message': f'Неизвестная ошибка', 'error_type': 'unknown_error'}
-    
+
     @classmethod
     async def delete(
             cls, id: int, model: ModelType, session: AsyncSession
@@ -149,7 +150,7 @@ class Service(metaclass = ServiceMeta):
         instance = await cls.repository.get_by_id(id, model, session)
         if instance:
             result = await cls.repository.delete(instance, session)
-            
+
             if result == "foreign_key_violation":
                 return {'success': False, 'deleted_count': 0,
                         'message': 'Невозможно удалить запись: на неё ссылаются другие объекты'}
@@ -170,3 +171,19 @@ class Service(metaclass = ServiceMeta):
         """Поиск записей по полю"""
         result = await cls.repository.get_by_fields({field_name: field_value}, model, session)
         return [result] if result else []
+    
+    # app/services/base.py
+    # Добавь этот метод в класс Service
+    
+    @classmethod
+    async def search(
+            cls, field_name: str, search_value: str, page: int, page_size: int, model: ModelType, session: AsyncSession
+            ) -> Dict[str, Any]:
+        """
+        Упрощенный поиск с пагинацией
+        """
+        skip = (page - 1) * page_size
+        items, total = await cls.repository.search_by_field(field_name, search_value, skip, page_size, model, session)
+        
+        return {"items": items, "total": total, "page": page, "page_size": page_size,
+                "has_next": skip + len(items) < total, "has_prev": page > 1}

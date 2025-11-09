@@ -1,10 +1,11 @@
 # app/routers/mongo_file_router.py
+# flake8: NOQA: E251 E123 W293
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from fastapi.responses import Response
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.databases.postgres import get_db
-from app.databases.mongo import get_database
+from app.databases.mongo import get_database, get_mongodb, MongoDB
 from app.repositories.mongo_file_repository import MongoFileRepository
 from app.services.mongo_file_service import MongoFileService
 from app.services.image_service import ImageService
@@ -25,6 +26,7 @@ class MongoFileRouter:
     def setup_routes(self):
         """Настройка маршрутов"""
         self.router.add_api_route("", self.upload_file, methods = ["POST"], response_model = dict)
+        self.router.add_api_route("/health", self.health_check, methods = ["GET"])
         self.router.add_api_route("/{file_id}", self.get_file, methods = ["GET"], response_model = dict)
         self.router.add_api_route("/{file_id}/content", self.get_file_content, methods = ["GET"])
         self.router.add_api_route("/{file_id}", self.update_file_upload, methods = ["PATCH"])
@@ -32,6 +34,7 @@ class MongoFileRouter:
         self.router.add_api_route("", self.get_all_files, methods = ["GET"], response_model = dict)
         self.router.add_api_route("/search", self.search_files, methods = ["GET"], response_model = dict)
         self.router.add_api_route("/{file_id}/link-to-postgres", self.link_to_postgres, methods = ["POST"])
+        
     
     def _generate_file_url(self, file_id: str) -> str:
         """Генерация динамического URL для файла"""
@@ -40,7 +43,7 @@ class MongoFileRouter:
         encoded_file_id = urllib.parse.quote(file_id)
         return f"{base_url}/{prefix}/{encoded_file_id}/content"
     
-    async def get_repository(self, database=Depends(get_database)):
+    async def get_repository(self, database = Depends(get_database)):
         return MongoFileRepository(database)
     
     async def upload_file(
@@ -174,6 +177,19 @@ class MongoFileRouter:
         
         return {"message": "File linked to PostgreSQL successfully", "postgres_id": result.id, "mongo_file_id": file_id,
                 "file_url": file_url}
+    
+    async def health_check(self, mongodb_instance: MongoDB = Depends(get_mongodb)):
+        status_info = {"status": "healthy", "mongo_connected": mongodb_instance.client is not None,
+                       "mongo_operational": False}
+        
+        if mongodb_instance.client:
+            try:
+                await mongodb_instance.client.admin.command('ping')
+                status_info["mongo_operational"] = True
+            except Exception as e:
+                status_info["status"] = f"{str(e)}"
+        
+        return status_info
 
 
 mongo_file_router = MongoFileRouter().router

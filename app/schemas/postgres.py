@@ -12,7 +12,7 @@ from datetime import datetime
 class PaginationBase(BaseModel):
     total: int
     page: int
-    size: int
+    page_size: int
     pages: int
 
 

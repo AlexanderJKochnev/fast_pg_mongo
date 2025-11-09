@@ -1,18 +1,19 @@
 # app/routers/base.py
-from fastapi import APIRouter, Depends, status, Query
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.databases.postgres import get_db
 
 
 class BaseRouter:
     """Базовый класс роутера"""
-    
+
     def __init__(
-            self, prefix: str, tags: List[str], service, model, create_schema, read_schema, patch_schema, delete_schema,
-            pagination_schema, read_schema_relation=None
-            ):
+        self, prefix: str, tags: List[str], service, model, create_schema, read_schema, patch_schema, delete_schema,
+        pagination_schema, read_schema_relation=None
+    ):
         self.prefix = prefix
         self.tags = tags
         self.service = service
@@ -23,83 +24,98 @@ class BaseRouter:
         self.delete_schema = delete_schema
         self.pagination_schema = pagination_schema
         self.read_schema_relation = read_schema_relation or read_schema
-        
-        self.router = APIRouter(prefix = prefix, tags = self.tags)
+
+        self.router = APIRouter(prefix=prefix, tags=self.tags)
         self.setup_routes()
-    
+
     def setup_routes(self):
         """Настраивает маршруты"""
         # Create
         self.router.add_api_route(
-            "", self.create, methods = ["POST"], response_model = self.read_schema
-            )
-        
+            "", self.create, methods=["POST"], response_model=self.read_schema
+        )
+
         # Get all с пагинацией
         self.router.add_api_route(
-            "", self.get_all, methods = ["GET"], response_model = self.pagination_schema
-            )
-        
-        # Get by ID
-        self.router.add_api_route(
-            "/{id}", self.get_by_id, methods = ["GET"], response_model = self.read_schema
-            )
-        
-        # Patch
-        self.router.add_api_route("/{id}", self.patch, methods = ["PATCH"])
-        
-        # Delete
-        self.router.add_api_route("/{id}", self.delete, methods = ["DELETE"])
-        
+            "", self.get_all, methods=["GET"], response_model=self.pagination_schema
+        )
+
         # Search с пагинацией
         self.router.add_api_route(
-            "/search", self.search, methods = ["GET"], response_model = self.pagination_schema
-            )
-        
+            "/search", self.search, methods=["GET"], response_model=self.pagination_schema
+        )
+
         # Search без пагинации
         self.router.add_api_route(
-            "/search_all", self.search_all, methods = ["GET"], response_model = List[self.read_schema]
-            )
-    
+            "/search_all", self.search_all, methods=["GET"], response_model=List[self.read_schema]
+        )
+
+        # Get by ID
+        self.router.add_api_route(
+            "/{id}", self.get_by_id, methods=["GET"], response_model=self.read_schema
+        )
+
+        # Patch
+        self.router.add_api_route("/{id}", self.patch, methods=["PATCH"])
+
+        # Delete
+        self.router.add_api_route("/{id}", self.delete, methods=["DELETE"])
+
     async def create(self, data, db: AsyncSession = Depends(get_db)):
         """Создание записи"""
         return await self.service.get_or_create(data, db, self.model)
-    
+
     async def get_all(
-            self, page: int = Query(1, ge = 1), page_size: int = Query(10, ge = 1, le = 100),
-            after_date: Optional[datetime] = None, db: AsyncSession = Depends(get_db)
-            ):
+        self, page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=100),
+        db: AsyncSession = Depends(get_db)
+    ):
         """Получение всех записей с пагинацией"""
-        # Используем текущую дату если after_date не указан
-        if after_date is None:
-            after_date = datetime.utcfromtimestamp(0)  # Начало эпохи Unix
-        
-        return await self.service.get_all(after_date, page, page_size, self.model, db)
-    
+        result = await self.service.get_all(page, page_size, self.model, db)
+        return self.pagination_schema(
+            items=result["items"], total=result["total"], page=result["page"], page_size=result["page_size"],
+            pages=(result["total"] + result["page_size"] - 1) // result["page_size"]
+        )
+
     async def get_by_id(self, id: int, db: AsyncSession = Depends(get_db)):
         """Получение записи по ID"""
-        return await self.service.get_by_id(id, self.model, db)
-    
+        result = await self.service.get_by_id(id, self.model, db)
+        if not result:
+            raise HTTPException(status_code=404, detail="Record not found")
+        return result
+
     async def patch(self, id: int, data, db: AsyncSession = Depends(get_db)):
         """Обновление записи"""
-        return await self.service.patch(id, data, self.model, db)
-    
+        result = await self.service.patch(id, data, self.model, db)
+        if result.get('success'):
+            return result
+        else:
+            raise HTTPException(status_code=404, detail=result.get('message', 'Неизвестная ошибка'))
+        return result
+
     async def delete(self, id: int, db: AsyncSession = Depends(get_db)):
         """Удаление записи"""
-        return await self.service.delete(id, self.model, db)
+        result = await self.service.delete(id, self.model, db)
+        if not result.get('success', False):
+            raise HTTPException(status_code=404, detail=result.get('message', 'Delete failed'))
+        return result
     
     async def search(
-            self, query: str = Query(...), page: int = Query(1, ge = 1), page_size: int = Query(10, ge = 1, le = 100),
-            db: AsyncSession = Depends(get_db)
+            self, query: str = Query(..., description="Search query"),
+            field: str = Query("code", description="Field to search in"), page: int = Query(1, ge = 1),
+            page_size: int = Query(10, ge = 1, le = 100), db: AsyncSession = Depends(get_db)
             ):
         """Поиск с пагинацией"""
-        # Базовая реализация - возвращаем все записи
-        after_date = datetime.utcfromtimestamp(0)
-        return await self.service.get_all(after_date, page, page_size, self.model, db)
-    
+        result = await self.service.search(field, query, page, page_size, self.model, db)
+        
+        return self.pagination_schema(
+                items = result["items"], total = result["total"], page = result["page"],
+                page_size = result["page_size"],
+                pages = (result["total"] + result["page_size"] - 1) // result["page_size"]
+                )
+
     async def search_all(
-            self, query: str = Query(...), db: AsyncSession = Depends(get_db)
-            ):
+        self, query: str = Query(...), db: AsyncSession = Depends(get_db)
+    ):
         """Поиск без пагинации"""
         # Базовая реализация - возвращаем все записи
-        after_date = datetime.utcfromtimestamp(0)
-        return await self.service.get(after_date, self.model, db)
+        return await self.service.get(self.model, db)
