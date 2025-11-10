@@ -15,10 +15,10 @@ class MongoFileRepository:
         document = {"filename": file_data.filename, "size": len(file_data.content),
                     "content": file_data.content, "content_type": file_data.content_type,
                     "created_at": datetime.utcnow()}
-        
+
         result = await self.collection.insert_one(document)
         return str(result.inserted_id)
-    
+
     async def get_by_id(self, file_id: str) -> Optional[Dict[str, Any]]:
         """Получение файла по ID"""
         try:
@@ -28,22 +28,22 @@ class MongoFileRepository:
                         "content": document["content"], "content_type": document["content_type"],
                         "created_at": document["created_at"]}
             return None
-        except:
+        except Exception:
             return None
-    
+
     async def get_metadata_by_id(self, file_id: str) -> Optional[Dict[str, Any]]:
         """Получение метаданных файла (без содержимого)"""
         try:
             document = await self.collection.find_one(
-                    {"_id": ObjectId(file_id)}, {"content": 0}  # Исключаем поле content
-                    )
+                {"_id": ObjectId(file_id)}, {"content": 0}  # Исключаем поле content
+            )
             if document:
                 return {"file_id": str(document["_id"]), "filename": document["filename"], "size": document["size"],
                         "content_type": document["content_type"], "created_at": document["created_at"]}
             return None
-        except:
+        except Exception:
             return None
-    
+
     async def update(self, file_id: str, file_data: MongoFileUpdate) -> bool:
         """Обновление файла"""
         try:
@@ -56,33 +56,33 @@ class MongoFileRepository:
             if file_data.content_type is not None:
                 update_data["content_type"] = file_data.content_type
             update_data["updated_at"] = datetime.utcnow()
-            
+
             result = await self.collection.update_one(
-                    {"_id": ObjectId(file_id)}, {"$set": update_data}
-                    )
+                {"_id": ObjectId(file_id)}, {"$set": update_data}
+            )
             return result.modified_count > 0
-        except:
+        except Exception:
             return False
-    
+
     async def delete(self, file_id: str) -> bool:
-        """Удаление файла"""
+        """Удаление файла see delete_file"""
         try:
             result = await self.collection.delete_one({"_id": ObjectId(file_id)})
             return result.deleted_count > 0
-        except:
+        except Exception:
             return False
-    
+
     async def get_all(self, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         """Получение всех файлов (метаданные)"""
         cursor = self.collection.find({}, {"content": 0}).skip(skip).limit(limit)
         files = []
         async for document in cursor:
             files.append(
-                    {"file_id": str(document["_id"]), "filename": document["filename"], "size": document["size"],
-                            "content_type": document["content_type"], "created_at": document["created_at"]}
-                    )
+                {"file_id": str(document["_id"]), "filename": document["filename"], "size": document["size"],
+                 "content_type": document["content_type"], "created_at": document["created_at"]}
+            )
         return files
-    
+
     async def count(self) -> int:
         """Подсчет общего количества файлов"""
         return await self.collection.count_documents({})
@@ -109,8 +109,18 @@ class MongoFileRepository:
         """Получение только содержимого файла"""
         try:
             document = await self.collection.find_one(
-                    {"_id": ObjectId(file_id)}, {"content": 1}
-                    )
+                {"_id": ObjectId(file_id)}, {"content": 1}
+            )
             return document.get("content") if document else None
-        except:
+        except Exception:
             return None
+
+    async def delete_file(self, file_id: str) -> bool:
+        """Удаление файла по ID"""
+        try:
+            from bson import ObjectId
+            result = await self.collection.delete_one({"_id": ObjectId(file_id)})
+            return result.deleted_count > 0
+        except Exception as e:
+            print(f"Error deleting file {file_id}: {e}")
+            return False

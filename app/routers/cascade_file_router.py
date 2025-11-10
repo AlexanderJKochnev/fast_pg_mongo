@@ -25,14 +25,21 @@ class CascadeFileRouter:
 
     def setup_routes(self):
         """Настройка маршрутов для каскадной обработки"""
-        self.router.add_api_route("", self.create_cascade_file,
-                                  methods=["POST"], response_model=dict)
-        self.router.add_api_route("/name/{name_id}", self.get_files_by_name,
-                                  methods=["GET"], response_model=dict)
-        self.router.add_api_route("/name/{name_id}", self.delete_files_by_name,
-                                  methods=["DELETE"])
-        self.router.add_api_route("/image/{image_id}", self.get_file_by_image,
-                                  methods=["GET"], response_model=dict)
+        self.router.add_api_route(
+            "", self.create_cascade_file, methods=["POST"], response_model=dict
+        )
+        self.router.add_api_route(
+            "/name/{name_id}", self.get_files_by_name, methods=["GET"], response_model=dict
+        )
+        self.router.add_api_route(
+            "/image/{image_id}", self.get_file_by_image, methods=["GET"], response_model=dict
+        )
+        self.router.add_api_route(
+            "/cascade/name/{name_id}", self.delete_by_name_id, methods=["DELETE"]
+        )
+        self.router.add_api_route(
+            "/cascade/status/{status}", self.delete_by_name_status, methods=["DELETE"]
+        )
 
     def _generate_file_url(self, file_id: str) -> str:
         base_url = settings.API_BASE_URL.rstrip('/')
@@ -41,8 +48,8 @@ class CascadeFileRouter:
         return f"{base_url}/{prefix}/{encoded_file_id}/content"
 
     async def create_cascade_file(
-        self, name_id: int = Form(...), file: UploadFile = File(...), file_url: Optional[str] = Form(None),
-        database=Depends(get_database), db: AsyncSession = Depends(get_db)
+            self, name_id: int = Form(...), file: UploadFile = File(...), file_url: Optional[str] = Form(None),
+            database=Depends(get_database), db: AsyncSession = Depends(get_db)
     ):
         """Создание каскадной записи: Name -> Image -> MongoDB"""
         try:
@@ -79,8 +86,7 @@ class CascadeFileRouter:
             raise HTTPException(status_code=500, detail=f"Cascade creation failed: {str(e)}")
 
     async def get_files_by_name(
-        self, name_id: int, db: AsyncSession = Depends(get_db),
-        database=Depends(get_database)
+            self, name_id: int, db: AsyncSession = Depends(get_db), database=Depends(get_database)
     ):
         """Получение всех файлов по name_id"""
         try:
@@ -107,39 +113,8 @@ class CascadeFileRouter:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get files: {str(e)}")
 
-    async def delete_files_by_name(
-        self, name_id: int, db: AsyncSession = Depends(get_db),
-        database=Depends(get_database)
-    ):
-        """Удаление связанных записей и файлов из name rawdata imges & mongodb по name_id"""
-        try:
-            images = await ImageService.get_by_field("name_id", name_id, db, Image)
-            repository = MongoFileRepository(database)
-            if not images:
-                raise HTTPException(status_code=404, detail=f"No files found for name_id {name_id}")
-
-            deleted_files = 0
-            deleted_images = 0
-
-            for image in images:
-                # Используем ваш существующий метод delete
-                mongo_success = await MongoFileService.delete_file(image.file_id, repository)
-                if mongo_success:
-                    deleted_files += 1
-
-                postgres_result = await ImageService.delete(image.id, Image, db)
-                if postgres_result.get('success', False):
-                    deleted_images += 1
-
-            return {"message": "Cascade deletion completed", "deleted_files_from_mongodb": deleted_files,
-                    "deleted_images_from_postgresql": deleted_images, "name_id": name_id}
-
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Cascade deletion failed: {str(e)}")
-
     async def get_file_by_image(
-        self, image_id: int, db: AsyncSession = Depends(get_db),
-        database=Depends(get_database)
+            self, image_id: int, db: AsyncSession = Depends(get_db), database=Depends(get_database)
     ):
         """Получение файла по image_id"""
         try:
@@ -162,6 +137,85 @@ class CascadeFileRouter:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get file: {str(e)}")
+
+    async def delete_by_name_id(
+            self, name_id: int, database=Depends(get_database), db: AsyncSession = Depends(get_db)
+    ):
+        """Удаление по name_id: Name -> Rawdata -> Images -> MongoDB files"""
+        try:
+            # 1. Получаем все file_id из Images для этого name_id
+            from app.models.postgres import Image
+            images = await ImageService.get_by_field("name_id", name_id, Image, db)
+            file_ids = [image.file_id for image in images if image.file_id]
+
+            # 2. Удаляем файлы из MongoDB
+            repository = MongoFileRepository(database)
+            deleted_files_count = 0
+            for file_id in file_ids:
+                try:
+                    success = await MongoFileService.delete_file(file_id, repository)
+                    if success:
+                        deleted_files_count += 1
+                except Exception as e:
+                    print(f"Failed to delete MongoDB file {file_id}: {e}")
+
+            # 3. Удаляем Name (каскадно удалит Rawdata и Images)
+            from app.models.postgres import Name
+            delete_result = await NameService.delete(name_id, Name, db)
+
+            return {"message": f"Cascade deletion by name_id {name_id} completed",
+                    "deleted_name": delete_result.get('success', False),
+                    "deleted_files_from_mongodb": deleted_files_count, "file_ids_deleted": file_ids}
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Cascade deletion by name_id failed: {str(e)}")
+
+    async def delete_by_name_status(
+            self, status: str, database=Depends(get_database), db: AsyncSession = Depends(get_db)
+    ):
+        """Удаление по status: Names -> Rawdata -> Images -> MongoDB files"""
+        try:
+            # 1. Получаем все Names с указанным status
+            from app.models.postgres import Name
+            names = await NameService.get_by_field("status", status, Name, db)
+
+            if not names:
+                return {"message": f"No names found with status '{status}'", "deleted_names": 0,
+                        "deleted_files_from_mongodb": 0}
+
+            # 2. Собираем все file_id из всех Images всех найденных Names
+            from app.models.postgres import Image
+            all_file_ids = []
+            deleted_names_count = 0
+
+            for name in names:
+                images = await ImageService.get_by_field("name_id", name.id, Image, db)
+                file_ids = [image.file_id for image in images if image.file_id]
+                all_file_ids.extend(file_ids)
+
+                # Удаляем Name (каскадно удалит Rawdata и Images)
+                delete_result = await NameService.delete(name.id, Name, db)
+                if delete_result.get('success', False):
+                    deleted_names_count += 1
+
+            # 3. Удаляем файлы из MongoDB
+            repository = MongoFileRepository(database)
+            deleted_files_count = 0
+            unique_file_ids = list(set(all_file_ids))  # Убираем дубликаты
+
+            for file_id in unique_file_ids:
+                try:
+                    success = await MongoFileService.delete_file(file_id, repository)
+                    if success:
+                        deleted_files_count += 1
+                except Exception as e:
+                    print(f"Failed to delete MongoDB file {file_id}: {e}")
+
+            return {"message": f"Cascade deletion by status '{status}' completed", "deleted_names": deleted_names_count,
+                    "deleted_files_from_mongodb": deleted_files_count, "total_file_ids_found": len(unique_file_ids)}
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Cascade deletion by status failed: {str(e)}")
 
 
 cascade_file_router = CascadeFileRouter().router
