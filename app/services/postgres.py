@@ -16,7 +16,7 @@ class RawService(Service):
 
 
 class ImageService(Service):
-    
+
     @classmethod
     async def create_image(cls, image_data: dict, session, model=Image):
         """Создание записи об изображении"""

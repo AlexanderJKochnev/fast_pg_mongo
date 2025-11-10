@@ -1,5 +1,4 @@
 # tests/conftest.py
-# flake8:  NOQA: W291 E402 W292 W293
 
 import asyncio
 from pathlib import Path
@@ -9,6 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 import os
 import sys
+from sqlalchemy import text
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,6 +26,7 @@ TEST_MONGO_DB = "test_db"
 test_engine = None
 TestingSessionLocal = None
 
+
 @pytest.fixture(scope="session")
 def test_database_url():
     return TEST_DATABASE_URL
@@ -41,7 +42,7 @@ def test_mongo_db():
     return TEST_MONGO_DB
 
 
-@pytest.fixture(scope = "session")
+@pytest.fixture(scope="session")
 def event_loop():
     """Создаем event loop для тестов - ОДИН на всю сессию"""
     try:
@@ -52,36 +53,45 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope = "session", autouse = True)
+@pytest.fixture(scope="session", autouse=True)
 async def setup_databases():
     """Настройка тестовых баз данных ПЕРЕД запуском тестов"""
     global test_engine, TestingSessionLocal
-    
+
     print("🔄 Setting up test databases...")
-    
-    # Создаем движок и сессию ОДИН раз на сессию
+
+    # Создаем движок
     test_engine = create_async_engine(
-            TEST_DATABASE_URL, echo = True, pool_pre_ping = True
-            )
+        TEST_DATABASE_URL, echo=True, pool_pre_ping=True
+    )
     TestingSessionLocal = async_sessionmaker(
-            test_engine, class_ = AsyncSession, expire_on_commit = False, autoflush = False
-            )
-    
-    # Очистка и создание таблиц PostgreSQL
+        test_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+    )
+
+    # ПОЛНАЯ ОЧИСТКА И СОЗДАНИЕ - как в рабочем примере
     async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        from sqlalchemy import text
+        await conn.execute(text("DROP SCHEMA public CASCADE;"))
+        await conn.execute(text("CREATE SCHEMA public;"))
+        await conn.execute(text("GRANT ALL ON SCHEMA public TO public;"))
         await conn.run_sync(Base.metadata.create_all)
-    
+
+    print("✅ PostgreSQL tables created and cleaned")
+
     # Очистка MongoDB
-    test_db = await override_get_database()
-    collections = await test_db.list_collection_names()
-    if "files" in collections:
-        await test_db.drop_collection("files")
-    
+    test_mongo = MongoDB()
+    await test_mongo.connect(TEST_MONGO_URL, TEST_MONGO_DB)
+    collections = await test_mongo.database.list_collection_names()
+    for collection_name in collections:
+        await test_mongo.database[collection_name].delete_many({})
+    await test_mongo.disconnect()
+
+    print("✅ MongoDB cleaned")
+
     print("✅ Test databases setup completed")
-    
+
     yield
-    
+
     # Cleanup - закрываем движок
     if test_engine:
         await test_engine.dispose()
@@ -129,22 +139,21 @@ async def override_get_database():
 async def async_client(test_mongodb):
     """Асинхронный тестовый клиент"""
     # Переопределяем зависимости
-    
+
     async def override_get_mongodb():
         return test_mongodb
 
     async def override_get_database():
         return test_mongodb.database
-    
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_database] = override_get_database
-    
-    
+
     async with AsyncClient(
-            transport = ASGITransport(app = app), base_url = "http://test"
-            ) as client:
+            transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         yield client
-    
+
     # Очищаем переопределения
     app.dependency_overrides.clear()
 
