@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import (create_async_engine,
                                     AsyncSession)
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm import declarative_base
+# from sqlalchemy.orm import declarative_base
 from app.config import settings
 from contextlib import asynccontextmanager
 from app.models.base import Base
@@ -14,7 +14,7 @@ from app.models.base import Base
 # 1.1.    Асинхронный двигатель
 engine: AsyncEngine = create_async_engine(settings.database_url,
                                           echo=settings.DB_ECHO_LOG,
-                                          pool_pre_ping=True,)
+                                          pool_pre_ping=True)
 
 # 1.2. Фабрика асинхронных сессий
 AsyncSessionLocal = async_sessionmaker(
@@ -60,12 +60,11 @@ def get_db_sync():
 async def init_db():
     """Инициализация БД - создание таблиц"""
     # Импортируем все модели
-    from app.models.postgres import Code, Name, Rawdata, Image
+    # from app.models.postgres import Code, Name, Rawdata, Image
 
     # Создаем таблицы через движок
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
     print("✅ База данных инициализирована")
 
 
@@ -77,3 +76,6 @@ async def get_db_for_init():
             yield session
         finally:
             await session.close()
+
+
+print(f"Base в databases/postgres.py: {Base}")

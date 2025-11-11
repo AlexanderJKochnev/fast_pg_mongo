@@ -217,5 +217,3 @@ class CascadeFileRouter:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Cascade deletion by status failed: {str(e)}")
 
-
-cascade_file_router = CascadeFileRouter().router

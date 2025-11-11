@@ -76,7 +76,7 @@ class Settings(BaseSettings):
              добавить в requirements.txt psycopg[binary]>=3.1.0
         """
         return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:"
+            f"postgresql+psycopg_async://{self.POSTGRES_USER}:"
             f"{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:"
             f"{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )

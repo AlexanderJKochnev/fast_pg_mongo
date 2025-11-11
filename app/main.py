@@ -6,7 +6,7 @@ from app.routers import CodeRouter, NameRouter, RawdataRouter, ImageRouter
 from app.databases.postgres import init_db, get_db, engine
 from app.databases.mongo import get_mongodb
 from app.routers.mongo_file_router import mongo_file_router
-from app.routers.cascade_file_router import cascade_file_router
+from app.routers.cascade_file_router import CascadeFileRouter
 
 
 app = FastAPI()
@@ -32,7 +32,7 @@ app.include_router(name_router.router)
 app.include_router(rawdata_router.router)
 app.include_router(image_router.router)
 app.include_router(mongo_file_router)
-app.include_router(cascade_file_router)
+app.include_router(CascadeFileRouter().router)
 
 
 @app.on_event("startup")

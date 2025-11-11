@@ -1,21 +1,26 @@
 # tests/conftest.py
-
+# flake8:  NOQA: F401
 import asyncio
 from pathlib import Path
 import pytest
+import logging
 from httpx import AsyncClient, ASGITransport
 from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 import os
 import sys
 from sqlalchemy import text
+from sqlalchemy.orm import sessionmaker
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.main import app
-from app.databases.postgres import Base, get_db
+from app.databases.postgres import get_db
+from app.models.base import Base
 from app.databases.mongo import mongodb, get_database, MongoDB, get_mongodb
 
+
+scope = "session"
 # Тестовые настройки
 TEST_DATABASE_URL = "postgresql+psycopg_async://test_user:test@localhost:2345/test_db"
 # TEST_DATABASE_URL = "postgresql+asyncpg://test_user:test@localhost:2345/test_db"
@@ -26,8 +31,13 @@ TEST_MONGO_DB = "test_db"
 test_engine = None
 TestingSessionLocal = None
 
+# --------фикстуры констант-----------
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope=scope)
+def base_url():
+    return "http://test"
+
+@pytest.fixture(scope=scope)
 def test_database_url():
     return TEST_DATABASE_URL
 
@@ -42,18 +52,115 @@ def test_mongo_db():
     return TEST_MONGO_DB
 
 
+# -----------EVENT_LOOP----------
+
+"""
 @pytest.fixture(scope="session")
 def event_loop():
-    """Создаем event loop для тестов - ОДИН на всю сессию"""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+"""
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope=scope)
+def event_loop(request):
+    """
+    Создаём отдельный event loop для всей сессии тестов.
+    Это предотвращает ошибку "Event loop is closed".
+    """
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+# ------AUTOUSE FIXTURES-------
+
+
+@pytest.fixture(autouse=True)
+def disable_httpx_logging():
+    """Подавляет INFO-логи от httpx и httpcore"""
+    loggers_to_silence = ["httpx", "httpx._client", "httpcore"]
+    for name in loggers_to_silence:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+# ---- POSTGRESQL ----
+
+
+@pytest.fixture(scope=scope)
+async def mock_engine(test_database_url):
+    """
+        1. Создает асинхронный движок для тестовой базы данных
+        2. Сбрасывает все таблицы в базе данных
+        3. Создает таблицы в базе данных на основании мета данных
+    """
+    engine = create_async_engine(
+        test_database_url,
+        echo=False,
+        # pool_pre_ping=True
+        pool_pre_ping=False,  # ❗️ Отключите для async
+        pool_recycle=3600,    # Вместо этого используйте pool_recycle
+        pool_size=20, max_overflow=0  # !
+    )
+
+    # Создает все таблицы в базе данных
+    async with engine.begin() as conn:
+        # сбрасывает базу данных перед тестированием
+        # await conn.run_sync(Base.metadata.drop_all, checkfirst=False, cascade=True)
+        await conn.execute(text("DROP SCHEMA public CASCADE;"))
+        await conn.execute(text("CREATE SCHEMA public;"))
+        await conn.execute(text("GRANT ALL ON SCHEMA public TO public;"))
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture(scope=scope)
+async def test_db_session(mock_engine):
+    """Создает сессию для тестовой базы данных"""
+    AsyncSessionLocal = sessionmaker(
+        bind=mock_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+    )
+    # async with mock_engine.connect() as session:
+    async with AsyncSessionLocal() as session:
+        try:  # !
+            yield session
+            await session.commit()  # !  # await session.close()
+        except Exception:
+            await session.rollback()  # Откат при ошибках
+            raise
+
+
+@pytest.fixture(scope=scope)
+async def override_app_dependencies():
+    """ Фикстура для переопределения зависимостей приложения
+        сохраняет оригинальные зависимости, переписывает их и передает управление,
+        затем возвращает назад
+    """
+    original_overrides = app.dependency_overrides.copy()
+    yield app.dependency_overrides
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(original_overrides)
+
+
+@pytest.fixture(scope=scope)
+async def client(test_db_session, override_app_dependencies, base_url):
+    """Базовый клиент без авторизации"""
+    # Переопределяем зависимость get_db
+    async def get_test_db():
+        yield test_db_session
+    app.dependency_overrides[get_db] = get_test_db
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=base_url
+    ) as ac:
+        yield ac
+# --------------не классифициорованные
+
+
+@pytest.fixture(scope="session")  # , autouse=True)
 async def setup_databases():
     """Настройка тестовых баз данных ПЕРЕД запуском тестов"""
     global test_engine, TestingSessionLocal
@@ -70,7 +177,7 @@ async def setup_databases():
 
     # ПОЛНАЯ ОЧИСТКА И СОЗДАНИЕ - как в рабочем примере
     async with test_engine.begin() as conn:
-        from sqlalchemy import text
+        # from sqlalchemy import text
         await conn.execute(text("DROP SCHEMA public CASCADE;"))
         await conn.execute(text("CREATE SCHEMA public;"))
         await conn.execute(text("GRANT ALL ON SCHEMA public TO public;"))
@@ -159,7 +266,7 @@ async def async_client(test_mongodb):
 
 
 @pytest.fixture
-async def test_db_session():
+async def test_db_session2():
     """Фикстура для тестовой сессии БД"""
     async with TestingSessionLocal() as session:
         try:

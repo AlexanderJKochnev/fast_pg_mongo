@@ -1,24 +1,17 @@
 # app/models/base.py
+from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy import DateTime, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import DateTime, String, func
-from datetime import datetime, timezone
 
 
-class Base(DeclarativeBase):
-    pass
-
-
-class Base_at:
+class Base(AsyncAttrs, DeclarativeBase):
+    __abstract__ = True
     """Базовый класс с общими полями"""
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
-                                                 server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
-                                                 server_default=func.now(),
-                                                 onupdate=datetime.now(timezone.utc),
-                                                 index=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
 
 
-# Типы для полей (теперь это просто аннотации типов)
-str_uniq = String(255)
-str_null_index = String(255)
+print(f"Base в postgres.py: {Base}")
+print(f"Base.meta {Base.metadata}")
